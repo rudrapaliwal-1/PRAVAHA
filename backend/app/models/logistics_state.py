@@ -5,7 +5,8 @@ This is the single object the optimizer reads and writes.
 All collections are keyed by entity ID for O(1) lookup.
 """
 
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -27,6 +28,7 @@ class LogisticsState(BaseModel):
         routes:        All navigable routes, keyed by route ID.
         deliveries:    All active and historical deliveries (list — not keyed,
                        because multiple deliveries can share the same vehicle).
+        timestamp:     Optional reference snapshot time in UTC.
     """
 
     vehicles: Dict[str, Vehicle] = Field(
@@ -48,6 +50,10 @@ class LogisticsState(BaseModel):
     deliveries: List[Delivery] = Field(
         default_factory=list,
         description="All delivery tasks (pending, in-transit, completed)",
+    )
+    timestamp: Optional[datetime] = Field(
+        default=None,
+        description="Reference snapshot time in UTC",
     )
 
     # ------------------------------------------------------------------

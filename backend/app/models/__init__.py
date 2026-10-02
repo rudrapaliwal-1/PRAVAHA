@@ -11,7 +11,13 @@ from app.models.delivery import Delivery
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
 from app.models.logistics_state import LogisticsState
-from app.models.optimization import OptimizationDelivery, OptimizationResult
+from app.models.optimization import OptimizationDelivery, OptimizationResult, OptimizerWeights
+from app.models.prediction import (
+    DemandPointPrediction,
+    PredictionResponse,
+    ShortageSeverity,
+    SupplyPrediction,
+)
 from app.models.route import Route
 from app.models.vehicle import Location, Vehicle
 
@@ -21,6 +27,7 @@ __all__ = [
     "Priority",
     "DeliveryStatus",
     "RiskLevel",
+    "ShortageSeverity",
     # Core models
     "Location",
     "Vehicle",
@@ -31,5 +38,10 @@ __all__ = [
     "LogisticsState",
     "OptimizationDelivery",
     "OptimizationResult",
+    "OptimizerWeights",
+    "SupplyPrediction",
+    "DemandPointPrediction",
+    "PredictionResponse",
 ]
+
 

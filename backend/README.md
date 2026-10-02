@@ -326,10 +326,20 @@ Returns network route segments with length, travel time, and risk classification
 ---
 
 ### 7. `POST /api/optimize`
-Executes Google OR-Tools CP-SAT optimizer to determine optimal vehicle allocations, supply deliveries, and routes based on either a custom `LogisticsState` body or the default simulated world state.
+Executes Google OR-Tools CP-SAT optimizer to determine optimal vehicle allocations, supply deliveries, and routes based on either a custom `LogisticsState` body (or `OptimizeRequest` with configurable weights) or the default simulated world state.
 
 **Request:**
-`POST /api/optimize` (body optional, accepts `LogisticsState` JSON)
+`POST /api/optimize` (body optional, accepts `LogisticsState` or `{ "state": LogisticsState, "weights": OptimizerWeights }`)
+
+Optional configurable objective weights:
+- `weight_unmet_critical`: penalty multiplier for unmet critical demand (default 10,000)
+- `weight_unmet_high`: penalty multiplier for unmet high demand (default 5,000)
+- `weight_unmet_medium`: penalty multiplier for unmet medium demand (default 2,000)
+- `weight_unmet_low`: penalty multiplier for unmet low demand (default 1,000)
+- `weight_distance`: penalty per km of travel distance (default 10)
+- `weight_travel_time`: penalty per hour of travel time (default 100)
+- `weight_risk_safe` / `low` / `medium` / `high`: penalties per route risk tier
+- `weight_late_delivery`: penalty for deliveries arriving past demand deadline (default 5,000)
 
 **Response (`200 OK`):**
 ```json
@@ -345,7 +355,12 @@ Executes Google OR-Tools CP-SAT optimizer to determine optimal vehicle allocatio
       "quantity": 4000.0,
       "route_id": "ROUTE-03",
       "distance": 52.0,
-      "eta": 1.35
+      "travel_time": 1.35,
+      "risk": "safe",
+      "eta": 1.35,
+      "deadline": "2026-10-03T06:00:00Z",
+      "late_delivery": false,
+      "priority": "critical"
     },
     {
       "vehicle_id": "VEH-02",
@@ -355,7 +370,12 @@ Executes Google OR-Tools CP-SAT optimizer to determine optimal vehicle allocatio
       "quantity": 3500.0,
       "route_id": "ROUTE-02",
       "distance": 41.0,
-      "eta": 1.10
+      "travel_time": 1.10,
+      "risk": "low",
+      "eta": 1.10,
+      "deadline": "2026-10-03T12:00:00Z",
+      "late_delivery": false,
+      "priority": "medium"
     }
   ],
   "unmet_demand": {
@@ -388,7 +408,66 @@ Executes Google OR-Tools CP-SAT optimizer to determine optimal vehicle allocatio
     }
   },
   "total_distance": 93.0,
-  "total_eta": 2.45
+  "total_eta": 2.45,
+  "total_late_deliveries": 0
+}
+```
+
+---
+
+### 8. `GET /api/predictions`
+Returns deterministic near-future supply demand forecasts, depletion timelines, and shortage severity classifications for all active demand points.
+
+**Parameters:**
+- `horizon_hours` (query, optional, default: `6.0`): Forecast lookahead window in hours.
+
+**Formula:**
+$$\text{predicted\_demand} = \text{current\_requirement} + (\text{consumption\_rate} \times \text{horizon\_hours})$$
+
+**Response (`200 OK`):**
+```json
+{
+  "time_horizon_hours": 6.0,
+  "generated_at": "2026-10-02T15:30:00Z",
+  "total_demand_points": 6,
+  "critical_shortage_count": 2,
+  "predictions": {
+    "DEMAND-01": {
+      "demand_point_id": "DEMAND-01",
+      "priority": "critical",
+      "deadline": "2026-10-03T06:00:00Z",
+      "time_horizon_hours": 6.0,
+      "highest_severity": "critical",
+      "recommended_urgency_score": 113.8,
+      "predictions": {
+        "water": {
+          "supply_type": "water",
+          "current_requirement": 4000.0,
+          "consumption_rate": 120.0,
+          "predicted_demand": 4720.0,
+          "estimated_time_to_shortage": 0.0,
+          "shortage_severity": "critical",
+          "prediction_confidence": 0.95
+        },
+        "medicine": {
+          "supply_type": "medicine",
+          "current_requirement": 1200.0,
+          "consumption_rate": 45.0,
+          "predicted_demand": 1470.0,
+          "estimated_time_to_shortage": 0.0,
+          "shortage_severity": "critical",
+          "prediction_confidence": 0.95
+        }
+      }
+    }
+  },
+  "total_predicted_demand": {
+    "medicine": 6880.0,
+    "water": 24980.0,
+    "food": 16980.0,
+    "fuel": 10560.0,
+    "equipment": 4320.0
+  }
 }
 ```
 
@@ -398,10 +477,10 @@ Executes Google OR-Tools CP-SAT optimizer to determine optimal vehicle allocatio
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/predict/demand` | AI demand forecasting |
 | POST | `/simulate/disruption` | Scenario disruption simulation |
 | GET | `/resilience/score` | Supply chain resilience score |
 | POST | `/missions` | Create a logistics mission |
+
 
 ---
 

@@ -1,1 +1,23 @@
-"""prediction — AI-powered demand forecasting and disruption prediction."""
+"""
+prediction — AI-powered and deterministic demand forecasting, shortage detection, and resupply planning.
+"""
+
+from app.prediction.service import (
+    DemandPredictionService,
+    predict_demand,
+    prediction_service,
+)
+from app.prediction.shortage_service import (
+    ShortageDetectionService,
+    detect_shortages,
+    shortage_service,
+)
+
+__all__ = [
+    "DemandPredictionService",
+    "prediction_service",
+    "predict_demand",
+    "ShortageDetectionService",
+    "shortage_service",
+    "detect_shortages",
+]

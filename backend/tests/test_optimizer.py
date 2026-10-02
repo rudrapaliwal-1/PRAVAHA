@@ -14,7 +14,7 @@ Comprehensive tests for Google OR-Tools CP-SAT Logistics Optimizer:
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -22,7 +22,7 @@ from app.models.common import Priority, RiskLevel, SupplyType
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
 from app.models.logistics_state import LogisticsState
-from app.models.optimization import OptimizationResult
+from app.models.optimization import OptimizationResult, OptimizerWeights
 from app.models.route import Route
 from app.models.vehicle import Location, Vehicle
 from app.optimizer.service import optimize_logistics, optimizer_service
@@ -533,6 +533,416 @@ class TestBlock6InventoryAllocation:
         assert result.inventory_remaining["DEPOT-LIMITED"]["water"] == 0.0
 
 
+class TestBlock7RouteOptimization:
+    def test_normal_route_selection(self, loc_depot, loc_demand):
+        """Standard route selection returns route_id, distance, travel_time, risk, and ETA."""
+        depot = Depot(id="DEPOT-NORM", location=loc_depot, inventory={SupplyType.FOOD: 500.0})
+        dp = DemandPoint(id="DEMAND-NORM", location=loc_demand, required_supplies={SupplyType.FOOD: 100.0})
+        route = Route(
+            id="ROUTE-NORM",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=42.5,
+            travel_time=0.85,
+            risk=RiskLevel.SAFE,
+            available=True,
+        )
+        vehicle = Vehicle(id="VEH-NORM", capacity=300.0, current_location=loc_depot, speed=50.0)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp.id: dp},
+            routes={route.id: route},
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 1
+
+        delivery = result.deliveries[0]
+        assert delivery.route_id == "ROUTE-NORM"
+        assert delivery.distance == 42.5
+        assert delivery.travel_time == 0.85
+        assert delivery.risk == RiskLevel.SAFE
+        assert delivery.eta == 0.85
+
+    def test_shortest_route_selection(self, loc_depot, loc_demand):
+        """When multiple routes exist with equal risk, optimizer chooses the shorter/faster route."""
+        depot = Depot(id="DEPOT-ROUTING", location=loc_depot, inventory={SupplyType.WATER: 500.0})
+        dp = DemandPoint(id="DEMAND-ROUTING", location=loc_demand, required_supplies={SupplyType.WATER: 100.0})
+
+        route_long = Route(
+            id="ROUTE-LONG",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=95.0,
+            travel_time=2.2,
+            risk=RiskLevel.SAFE,
+        )
+        route_short = Route(
+            id="ROUTE-SHORT",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=35.0,
+            travel_time=0.7,
+            risk=RiskLevel.SAFE,
+        )
+        vehicle = Vehicle(id="VEH-1", capacity=300.0, current_location=loc_depot, speed=50.0)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp.id: dp},
+            routes={route_long.id: route_long, route_short.id: route_short},
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 1
+        assert result.deliveries[0].route_id == "ROUTE-SHORT"
+        assert result.deliveries[0].distance == 35.0
+        assert result.deliveries[0].travel_time == 0.7
+
+    def test_risk_aware_route_selection(self, loc_depot, loc_demand):
+        """Risk-averse weighting chooses longer SAFE route over shorter HIGH-risk route."""
+        depot = Depot(id="DEPOT-RISK", location=loc_depot, inventory={SupplyType.MEDICINE: 200.0})
+        dp = DemandPoint(id="DEMAND-RISK", location=loc_demand, required_supplies={SupplyType.MEDICINE: 50.0})
+
+        route_short_high_risk = Route(
+            id="ROUTE-SHORT-HIGH-RISK",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=20.0,
+            travel_time=0.4,
+            risk=RiskLevel.HIGH,
+        )
+        route_long_safe = Route(
+            id="ROUTE-LONG-SAFE",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=50.0,
+            travel_time=1.0,
+            risk=RiskLevel.SAFE,
+        )
+        vehicle = Vehicle(id="VEH-1", capacity=200.0, current_location=loc_depot, speed=50.0)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp.id: dp},
+            routes={
+                route_short_high_risk.id: route_short_high_risk,
+                route_long_safe.id: route_long_safe,
+            },
+        )
+
+        # 1. Default weights: High risk penalty outweighs extra distance -> selects SAFE route
+        result_default = optimize_logistics(state)
+        assert result_default.status == "OPTIMAL"
+        assert len(result_default.deliveries) == 1
+        assert result_default.deliveries[0].route_id == "ROUTE-LONG-SAFE"
+        assert result_default.deliveries[0].risk == RiskLevel.SAFE
+
+        # 2. Configurable weights: Zero risk penalty -> selects shorter route
+        weights_ignore_risk = OptimizerWeights(
+            weight_risk_high=0,
+            weight_risk_medium=0,
+            weight_risk_low=0,
+            weight_distance=10,
+            weight_travel_time=100,
+        )
+        result_ignore_risk = optimize_logistics(state, weights=weights_ignore_risk)
+        assert result_ignore_risk.status == "OPTIMAL"
+        assert len(result_ignore_risk.deliveries) == 1
+        assert result_ignore_risk.deliveries[0].route_id == "ROUTE-SHORT-HIGH-RISK"
+        assert result_ignore_risk.deliveries[0].risk == RiskLevel.HIGH
+
+    def test_blocked_route_cannot_be_selected(self, loc_depot, loc_demand):
+        """Unavailable or blocked routes cannot be selected under any circumstances."""
+        depot = Depot(id="DEPOT-BLK", location=loc_depot, inventory={SupplyType.FOOD: 300.0})
+        dp = DemandPoint(id="DEMAND-BLK", location=loc_demand, required_supplies={SupplyType.FOOD: 100.0})
+
+        route_blocked = Route(
+            id="ROUTE-BLOCKED",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=15.0,
+            travel_time=0.3,
+            risk=RiskLevel.BLOCKED,
+            available=False,
+        )
+        route_safe = Route(
+            id="ROUTE-SAFE",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=60.0,
+            travel_time=1.3,
+            risk=RiskLevel.SAFE,
+            available=True,
+        )
+        vehicle = Vehicle(id="VEH-1", capacity=300.0, current_location=loc_depot, speed=50.0)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp.id: dp},
+            routes={route_blocked.id: route_blocked, route_safe.id: route_safe},
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 1
+        assert result.deliveries[0].route_id == "ROUTE-SAFE"
+        assert result.deliveries[0].distance == 60.0
+
+    def test_no_feasible_route(self, loc_depot, loc_demand):
+        """When no usable route connects the depot and demand point, no deliveries are scheduled."""
+        loc_unconnected = Location(lat=31.9, lon=79.9)
+        depot = Depot(id="DEPOT-ISOLATED", location=loc_depot, inventory={SupplyType.FOOD: 300.0})
+        dp = DemandPoint(id="DEMAND-ISOLATED", location=loc_unconnected, required_supplies={SupplyType.FOOD: 100.0})
+
+        # Route only connects loc_depot to loc_demand (not to loc_unconnected)
+        route = Route(
+            id="ROUTE-OTHER",
+            source=loc_depot,
+            destination=loc_demand,
+            distance=40.0,
+            travel_time=0.8,
+            risk=RiskLevel.SAFE,
+        )
+        vehicle = Vehicle(id="VEH-1", capacity=300.0, current_location=loc_depot, speed=50.0)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp.id: dp},
+            routes={route.id: route},
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 0
+        assert result.total_supplied == 0.0
+        assert result.total_unmet_demand == 100.0
+        assert result.unmet_demand["DEMAND-ISOLATED"]["food"] == 100.0
+
+
+# ---------------------------------------------------------------------------
+# BLOCK 8: Demand Priority & Delivery Deadlines Tests
+# ---------------------------------------------------------------------------
+
+class TestBlock8PriorityAndDeadlines:
+    def test_priority_hierarchy_allocation(self, loc_depot):
+        """When 1 vehicle can only serve 1 of 4 competing demand points (CRITICAL, HIGH, MEDIUM, LOW),
+        the optimizer strictly prioritizes the CRITICAL demand point."""
+        loc_crit = Location(lat=30.1, lon=78.1)
+        loc_high = Location(lat=30.2, lon=78.2)
+        loc_med = Location(lat=30.3, lon=78.3)
+        loc_low = Location(lat=30.4, lon=78.4)
+
+        depot = Depot(id="DEPOT-01", location=loc_depot, inventory={SupplyType.MEDICINE: 500.0})
+        vehicle = Vehicle(id="VEH-01", capacity=500.0, current_location=loc_depot, speed=50.0)
+
+        dp_crit = DemandPoint(id="DP-CRITICAL", location=loc_crit, priority=Priority.CRITICAL, required_supplies={SupplyType.MEDICINE: 500.0})
+        dp_high = DemandPoint(id="DP-HIGH", location=loc_high, priority=Priority.HIGH, required_supplies={SupplyType.MEDICINE: 500.0})
+        dp_med = DemandPoint(id="DP-MED", location=loc_med, priority=Priority.MEDIUM, required_supplies={SupplyType.MEDICINE: 500.0})
+        dp_low = DemandPoint(id="DP-LOW", location=loc_low, priority=Priority.LOW, required_supplies={SupplyType.MEDICINE: 500.0})
+
+        r_crit = Route(id="R-CRIT", source=loc_depot, destination=loc_crit, distance=20.0, travel_time=0.4, risk=RiskLevel.SAFE)
+        r_high = Route(id="R-HIGH", source=loc_depot, destination=loc_high, distance=20.0, travel_time=0.4, risk=RiskLevel.SAFE)
+        r_med = Route(id="R-MED", source=loc_depot, destination=loc_med, distance=20.0, travel_time=0.4, risk=RiskLevel.SAFE)
+        r_low = Route(id="R-LOW", source=loc_depot, destination=loc_low, distance=20.0, travel_time=0.4, risk=RiskLevel.SAFE)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp.id: dp for dp in [dp_crit, dp_high, dp_med, dp_low]},
+            routes={r.id: r for r in [r_crit, r_high, r_med, r_low]},
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 1
+        delivery = result.deliveries[0]
+        assert delivery.demand_point_id == "DP-CRITICAL"
+        assert delivery.priority == Priority.CRITICAL
+        assert delivery.quantity == 500.0
+        assert result.unmet_demand["DP-CRITICAL"]["medicine"] == 0.0
+        assert result.unmet_demand["DP-HIGH"]["medicine"] == 500.0
+        assert result.unmet_demand["DP-MED"]["medicine"] == 500.0
+        assert result.unmet_demand["DP-LOW"]["medicine"] == 500.0
+
+    def test_high_vs_low_priority_allocation(self, loc_depot):
+        """When HIGH and LOW priority demand points compete for single vehicle, HIGH receives the delivery."""
+        loc_high = Location(lat=30.2, lon=78.2)
+        loc_low = Location(lat=30.4, lon=78.4)
+
+        depot = Depot(id="DEPOT-01", location=loc_depot, inventory={SupplyType.WATER: 500.0})
+        vehicle = Vehicle(id="VEH-01", capacity=500.0, current_location=loc_depot, speed=50.0)
+
+        dp_high = DemandPoint(id="DP-HIGH", location=loc_high, priority=Priority.HIGH, required_supplies={SupplyType.WATER: 500.0})
+        dp_low = DemandPoint(id="DP-LOW", location=loc_low, priority=Priority.LOW, required_supplies={SupplyType.WATER: 500.0})
+
+        r_high = Route(id="R-HIGH", source=loc_depot, destination=loc_high, distance=15.0, travel_time=0.3, risk=RiskLevel.SAFE)
+        r_low = Route(id="R-LOW", source=loc_depot, destination=loc_low, distance=15.0, travel_time=0.3, risk=RiskLevel.SAFE)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp_high.id: dp_high, dp_low.id: dp_low},
+            routes={r_high.id: r_high, r_low.id: r_low},
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 1
+        assert result.deliveries[0].demand_point_id == "DP-HIGH"
+        assert result.deliveries[0].priority == Priority.HIGH
+
+    def test_delivery_deadline_and_lateness_calculation(self, loc_depot):
+        """Calculates expected ETA, deadline, late_delivery flag, and priority for every delivery."""
+        t0 = datetime(2026, 10, 2, 12, 0, 0, tzinfo=timezone.utc)
+        loc_dp1 = Location(lat=30.1, lon=78.1)
+        loc_dp2 = Location(lat=30.2, lon=78.2)
+
+        depot = Depot(id="DEPOT-01", location=loc_depot, inventory={SupplyType.FOOD: 1000.0})
+        veh1 = Vehicle(id="VEH-01", capacity=500.0, current_location=loc_depot, speed=50.0)
+        veh2 = Vehicle(id="VEH-02", capacity=500.0, current_location=loc_depot, speed=50.0)
+
+        # DP-ONTIME deadline is 3h away; travel time is 1.5h -> on-time (late=False)
+        dp_ontime = DemandPoint(
+            id="DP-ONTIME",
+            location=loc_dp1,
+            priority=Priority.HIGH,
+            deadline=t0 + timedelta(hours=3.0),
+            required_supplies={SupplyType.FOOD: 400.0},
+        )
+        # DP-LATE deadline is 1h away; travel time is 2.5h -> late (late=True)
+        dp_late = DemandPoint(
+            id="DP-LATE",
+            location=loc_dp2,
+            priority=Priority.CRITICAL,
+            deadline=t0 + timedelta(hours=1.0),
+            required_supplies={SupplyType.FOOD: 400.0},
+        )
+
+        r1 = Route(id="R1", source=loc_depot, destination=loc_dp1, distance=75.0, travel_time=1.5, risk=RiskLevel.SAFE)
+        r2 = Route(id="R2", source=loc_depot, destination=loc_dp2, distance=125.0, travel_time=2.5, risk=RiskLevel.SAFE)
+
+        state = LogisticsState(
+            vehicles={veh1.id: veh1, veh2.id: veh2},
+            depots={depot.id: depot},
+            demand_points={dp_ontime.id: dp_ontime, dp_late.id: dp_late},
+            routes={r1.id: r1, r2.id: r2},
+            timestamp=t0,
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 2
+        assert result.total_late_deliveries == 1
+
+        deliv_by_dp = {d.demand_point_id: d for d in result.deliveries}
+        
+        d_ontime = deliv_by_dp["DP-ONTIME"]
+        assert d_ontime.eta == 1.5
+        assert d_ontime.deadline == dp_ontime.deadline
+        assert d_ontime.late_delivery is False
+        assert d_ontime.priority == Priority.HIGH
+
+        d_late = deliv_by_dp["DP-LATE"]
+        assert d_late.eta == 2.5
+        assert d_late.deadline == dp_late.deadline
+        assert d_late.late_delivery is True
+        assert d_late.priority == Priority.CRITICAL
+
+    def test_competing_demands_deadline_minimization(self, loc_depot):
+        """When two demands of equal priority compete for 1 vehicle, solver chooses the on-time delivery to minimize lateness."""
+        t0 = datetime(2026, 10, 2, 12, 0, 0, tzinfo=timezone.utc)
+        loc_dp1 = Location(lat=30.1, lon=78.1)
+        loc_dp2 = Location(lat=30.2, lon=78.2)
+
+        depot = Depot(id="DEPOT-01", location=loc_depot, inventory={SupplyType.WATER: 500.0})
+        vehicle = Vehicle(id="VEH-01", capacity=500.0, current_location=loc_depot, speed=50.0)
+
+        # DP-FEASIBLE: deadline in 2.0 hours, travel time 1.0h -> can arrive on time
+        dp_feasible = DemandPoint(
+            id="DP-FEASIBLE",
+            location=loc_dp1,
+            priority=Priority.MEDIUM,
+            deadline=t0 + timedelta(hours=2.0),
+            required_supplies={SupplyType.WATER: 500.0},
+        )
+        # DP-TARDY: deadline in 0.5 hours, travel time 1.0h -> would be late
+        dp_tardy = DemandPoint(
+            id="DP-TARDY",
+            location=loc_dp2,
+            priority=Priority.MEDIUM,
+            deadline=t0 + timedelta(hours=0.5),
+            required_supplies={SupplyType.WATER: 500.0},
+        )
+
+        r1 = Route(id="R1", source=loc_depot, destination=loc_dp1, distance=50.0, travel_time=1.0, risk=RiskLevel.SAFE)
+        r2 = Route(id="R2", source=loc_depot, destination=loc_dp2, distance=50.0, travel_time=1.0, risk=RiskLevel.SAFE)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp_feasible.id: dp_feasible, dp_tardy.id: dp_tardy},
+            routes={r1.id: r1, r2.id: r2},
+            timestamp=t0,
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 1
+        assert result.deliveries[0].demand_point_id == "DP-FEASIBLE"
+        assert result.deliveries[0].late_delivery is False
+
+    def test_critical_priority_preferred_even_if_late_over_low_ontime(self, loc_depot):
+        """Critical urgency outweighs minor deadline tardiness penalty when priority weighting is dominant."""
+        t0 = datetime(2026, 10, 2, 12, 0, 0, tzinfo=timezone.utc)
+        loc_crit = Location(lat=30.1, lon=78.1)
+        loc_low = Location(lat=30.2, lon=78.2)
+
+        depot = Depot(id="DEPOT-01", location=loc_depot, inventory={SupplyType.MEDICINE: 500.0})
+        vehicle = Vehicle(id="VEH-01", capacity=500.0, current_location=loc_depot, speed=50.0)
+
+        dp_crit = DemandPoint(
+            id="DP-CRITICAL",
+            location=loc_crit,
+            priority=Priority.CRITICAL,
+            deadline=t0 + timedelta(hours=0.5),  # will be late
+            required_supplies={SupplyType.MEDICINE: 500.0},
+        )
+        dp_low = DemandPoint(
+            id="DP-LOW",
+            location=loc_low,
+            priority=Priority.LOW,
+            deadline=t0 + timedelta(hours=5.0),  # on time
+            required_supplies={SupplyType.MEDICINE: 500.0},
+        )
+
+        r_crit = Route(id="R-CRIT", source=loc_depot, destination=loc_crit, distance=50.0, travel_time=1.0, risk=RiskLevel.SAFE)
+        r_low = Route(id="R-LOW", source=loc_depot, destination=loc_low, distance=50.0, travel_time=1.0, risk=RiskLevel.SAFE)
+
+        state = LogisticsState(
+            vehicles={vehicle.id: vehicle},
+            depots={depot.id: depot},
+            demand_points={dp_crit.id: dp_crit, dp_low.id: dp_low},
+            routes={r_crit.id: r_crit, r_low.id: r_low},
+            timestamp=t0,
+        )
+
+        result = optimize_logistics(state)
+        assert result.status == "OPTIMAL"
+        assert len(result.deliveries) == 1
+        assert result.deliveries[0].demand_point_id == "DP-CRITICAL"
+        assert result.deliveries[0].late_delivery is True
+        assert result.deliveries[0].priority == Priority.CRITICAL
+
+
 class TestSimulationWorldOptimization:
     def test_full_simulation_world_optimization(self):
         """Execute CP-SAT on the full 3-depot, 10-vehicle, 6-demand point simulation world."""
@@ -625,4 +1035,25 @@ class TestApiOptimizeEndpoint:
         assert validated.deliveries[0].quantity == 200.0
         assert validated.total_supplied == 200.0
         assert validated.total_unmet_demand == 0.0
+
+    def test_post_optimize_with_custom_weights(self, small_deterministic_state):
+        """POST /api/optimize with custom weights and state payload."""
+        payload = {
+            "state": small_deterministic_state.model_dump(mode="json"),
+            "weights": {
+                "weight_unmet_critical": 20000,
+                "weight_distance": 5,
+                "weight_travel_time": 50,
+                "weight_risk_high": 5000,
+            },
+        }
+        response = client.post("/api/optimize", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+
+        validated = OptimizationResult.model_validate(data)
+        assert validated.status == "OPTIMAL"
+        assert len(validated.deliveries) == 1
+        assert validated.deliveries[0].vehicle_id == "VEH-01"
+
 

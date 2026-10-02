@@ -5,6 +5,7 @@ Solves the single-delivery vehicle routing and allocation problem for disaster r
 and military logistics under strict capacity, inventory, and route availability constraints.
 """
 
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from ortools.sat.python import cp_model
 
@@ -12,21 +13,16 @@ from app.models.common import Priority, SupplyType
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
 from app.models.logistics_state import LogisticsState
-from app.models.optimization import OptimizationDelivery, OptimizationResult
+from app.models.optimization import (
+    OptimizationDelivery,
+    OptimizationResult,
+    OptimizerWeights,
+)
 from app.models.route import Route
 from app.models.vehicle import Vehicle
 
-
 # Scaling factor for continuous/floating-point quantities in CP-SAT integer domains
 QTY_SCALE = 100
-
-# Priority weights for unmet demand penalty
-PRIORITY_WEIGHTS = {
-    Priority.CRITICAL: 10_000,
-    Priority.HIGH: 5_000,
-    Priority.MEDIUM: 2_000,
-    Priority.LOW: 1_000,
-}
 
 
 def _find_usable_connecting_routes(
@@ -34,7 +30,10 @@ def _find_usable_connecting_routes(
     demand_point: DemandPoint,
     routes: Dict[str, Route],
 ) -> List[Route]:
-    """Finds all available, non-blocked routes connecting depot to demand point."""
+    """
+    Finds all available, non-blocked routes connecting depot to demand point.
+    HARD CONSTRAINT: Unavailable routes (available=False or risk=BLOCKED) cannot be selected.
+    """
     matching: List[Route] = []
     d_loc = depot.location
     p_loc = demand_point.location
@@ -52,21 +51,48 @@ def _find_usable_connecting_routes(
     return matching
 
 
+def _is_delivery_late(dp: DemandPoint, route: Route, ref_time: datetime) -> bool:
+    """
+    Determines if a delivery on `route` would arrive past the demand point's deadline.
+    """
+    if dp.deadline is None:
+        return False
+    deadline_utc = dp.deadline if dp.deadline.tzinfo is not None else dp.deadline.replace(tzinfo=timezone.utc)
+    available_hours = (deadline_utc - ref_time).total_seconds() / 3600.0
+    return route.travel_time > available_hours
+
+
 class LogisticsOptimizerService:
     """
     CP-SAT Optimization service for logistics network dispatching.
-    Encapsulates problem compilation, solving, and response formatting.
+    Encapsulates problem compilation, solving, and response formatting
+    with configurable multi-objective weights (priority, distance, time, risk, deadlines).
     """
 
-    def optimize(self, state: LogisticsState) -> OptimizationResult:
+    def optimize(
+        self,
+        state: LogisticsState,
+        weights: Optional[OptimizerWeights] = None,
+    ) -> OptimizationResult:
         """
         Executes CP-SAT optimization on the given LogisticsState.
 
+        Args:
+            state: Snapshot of the logistics network.
+            weights: Optional configurable objective weights. If omitted, default weights are used.
+
         Returns:
             OptimizationResult containing status, objective_value, deliveries, unmet_demand,
-            total_distance, and total_eta.
+            inventory used/remaining, total_supplied, total_unmet_demand, total_distance, total_eta,
+            and total_late_deliveries.
         """
+        cfg_weights = weights if weights is not None else OptimizerWeights()
         model = cp_model.CpModel()
+
+        # Reference time for deadline lateness calculations
+        ref_time = state.timestamp if state.timestamp is not None else datetime.now(timezone.utc)
+        if ref_time.tzinfo is None:
+            ref_time = ref_time.replace(tzinfo=timezone.utc)
 
         # 1. Filter operational vehicles & candidate nodes
         operational_vehicles = [v for v in state.vehicles.values() if v.is_operational]
@@ -102,10 +128,11 @@ class LogisticsOptimizerService:
                 inventory_remaining=initial_inv_rem,
                 total_distance=0.0,
                 total_eta=0.0,
+                total_late_deliveries=0,
             )
 
         # 2. Build candidate assignment tuples (v, d, p, s, r)
-        # Tuple definition: (v_id, d_id, p_id, supply_type, r_id, max_qty_int, distance, eta, route_risk)
+        # Tuple definition: (v, d, p, s, r, max_qty_int)
         Candidate = Tuple[Vehicle, Depot, DemandPoint, SupplyType, Route, int]
         candidates: List[Candidate] = []
 
@@ -146,11 +173,10 @@ class LogisticsOptimizerService:
                 inventory_remaining=initial_inv_rem,
                 total_distance=0.0,
                 total_eta=0.0,
+                total_late_deliveries=0,
             )
 
         # 3. Create CP-SAT decision variables
-        # x_vars[idx] -> bool: whether delivery candidate idx is executed
-        # q_vars[idx] -> int: delivered quantity for candidate idx
         x_vars = {}
         q_vars = {}
 
@@ -190,7 +216,7 @@ class LogisticsOptimizerService:
         unmet_objective_terms = []
 
         for p in demand_points.values():
-            p_weight = PRIORITY_WEIGHTS.get(p.priority, 1_000)
+            p_weight = cfg_weights.get_priority_weight(p.priority)
             for st, req_qty in p.required_supplies.items():
                 if req_qty <= 0:
                     continue
@@ -211,12 +237,17 @@ class LogisticsOptimizerService:
 
                 unmet_objective_terms.append(p_weight * u_var)
 
-        # 5. OBJECTIVE: Minimize weighted combination of unmet demand, distance, and travel time
+        # 5. OBJECTIVE: Minimize configurable weighted combination of unmet demand, distance, travel time, risk, and deadline lateness
         routing_objective_terms = []
         for idx, (v, d, p, st, r, _) in enumerate(candidates):
-            dist_cost = int(round(r.distance * 10))
-            time_cost = int(round(r.travel_time * 100))
-            routing_objective_terms.append((dist_cost + time_cost) * x_vars[idx])
+            dist_cost = int(round(r.distance * cfg_weights.weight_distance))
+            time_cost = int(round(r.travel_time * cfg_weights.weight_travel_time))
+            risk_cost = cfg_weights.get_risk_penalty(r.risk)
+            is_late = _is_delivery_late(p, r, ref_time)
+            late_cost = cfg_weights.weight_late_delivery if is_late else 0
+
+            total_candidate_cost = dist_cost + time_cost + risk_cost + late_cost
+            routing_objective_terms.append(total_candidate_cost * x_vars[idx])
 
         model.Minimize(sum(unmet_objective_terms) + sum(routing_objective_terms))
 
@@ -253,6 +284,7 @@ class LogisticsOptimizerService:
                 if solver.Value(x_vars[idx]) == 1:
                     qty = round(solver.Value(q_vars[idx]) / QTY_SCALE, 2)
                     if qty > 0:
+                        is_late = _is_delivery_late(p, r, ref_time)
                         deliveries.append(
                             OptimizationDelivery(
                                 vehicle_id=v.id,
@@ -262,7 +294,12 @@ class LogisticsOptimizerService:
                                 quantity=qty,
                                 route_id=r.id,
                                 distance=float(r.distance),
+                                travel_time=float(r.travel_time),
+                                risk=r.risk,
                                 eta=float(r.travel_time),
+                                deadline=p.deadline,
+                                late_delivery=is_late,
+                                priority=p.priority,
                             )
                         )
                         st_key = st.value
@@ -278,12 +315,14 @@ class LogisticsOptimizerService:
             total_eta = round(sum(dl.eta for dl in deliveries), 2)
             total_sup = round(sum(dl.quantity for dl in deliveries), 2)
             total_unmet = round(sum(sum(dp_u.values()) for dp_u in calculated_unmet.values()), 2)
+            total_late = sum(1 for dl in deliveries if dl.late_delivery)
             obj_val = float(solver.ObjectiveValue())
         else:
             total_dist = 0.0
             total_eta = 0.0
             total_sup = 0.0
             total_unmet = total_initial_unmet
+            total_late = 0
             inv_used = initial_inv_used
             inv_remaining = initial_inv_rem
             obj_val = 0.0
@@ -299,6 +338,7 @@ class LogisticsOptimizerService:
             inventory_remaining=inv_remaining,
             total_distance=total_dist,
             total_eta=total_eta,
+            total_late_deliveries=total_late,
         )
 
 
@@ -306,7 +346,11 @@ class LogisticsOptimizerService:
 optimizer_service = LogisticsOptimizerService()
 
 
-def optimize_logistics(state: LogisticsState) -> OptimizationResult:
+def optimize_logistics(
+    state: LogisticsState,
+    weights: Optional[OptimizerWeights] = None,
+) -> OptimizationResult:
     """Helper function to execute logistics optimization."""
-    return optimizer_service.optimize(state)
+    return optimizer_service.optimize(state, weights=weights)
+
 

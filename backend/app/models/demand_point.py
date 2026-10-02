@@ -35,6 +35,10 @@ class DemandPoint(BaseModel):
         default_factory=dict,
         description="Supplies needed per type (kg or units)",
     )
+    current_inventory: Dict[SupplyType, float] = Field(
+        default_factory=dict,
+        description="Current on-hand inventory at the demand point (kg or units)",
+    )
     priority: Priority = Field(default=Priority.MEDIUM, description="Urgency level")
     deadline: Optional[datetime] = Field(
         default=None,
@@ -53,7 +57,7 @@ class DemandPoint(BaseModel):
             raise ValueError("DemandPoint id must not be blank")
         return v
 
-    @field_validator("required_supplies", "consumption_rate")
+    @field_validator("required_supplies", "consumption_rate", "current_inventory")
     @classmethod
     def quantities_must_be_non_negative(cls, v: Dict[SupplyType, float]) -> Dict[SupplyType, float]:
         for supply_type, qty in v.items():
