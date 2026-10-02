@@ -66,17 +66,29 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
-## API Endpoints (Current)
+## API Endpoints (Complete Catalog)
 
-| Method | Endpoint | Response Model | Description |
-|--------|----------|----------------|-------------|
-| GET | `/health` | `HealthResponse` | Liveness probe & service health check |
-| GET | `/api/state` | `LogisticsState` | Complete snapshot of in-memory logistics network |
-| GET | `/api/vehicles` | `List[Vehicle]` | Fleet of transport vehicles and current statuses |
-| GET | `/api/depots` | `List[Depot]` | Supply depots and available inventory stock |
-| GET | `/api/demand-points` | `List[DemandPoint]` | Relief destinations, required supplies, and deadlines |
-| GET | `/api/routes` | `List[Route]` | Network edges with distance, travel time, and risk |
-| POST | `/api/optimize` | `OptimizationResult` | CP-SAT optimization of vehicle allocations & deliveries |
+For the complete, frontend-ready API contract with full JSON payloads, see [`docs/API.md`](../docs/API.md).
+
+| # | Method | Endpoint | Response Model | Description |
+|---|--------|----------|----------------|-------------|
+| 1 | `GET` | `/health` | `HealthResponse` | Liveness probe & service health check |
+| 2 | `GET` | `/api/state` | `LogisticsState` | Complete snapshot of in-memory logistics network |
+| 3 | `GET` | `/api/vehicles` | `List[Vehicle]` | Fleet of transport vehicles and current statuses |
+| 4 | `GET` | `/api/depots` | `List[Depot]` | Supply depots and available inventory stock |
+| 5 | `GET` | `/api/demand-points` | `List[DemandPoint]` | Relief destinations, required supplies, and deadlines |
+| 6 | `GET` | `/api/routes` | `List[Route]` | Network edges with distance, travel time, and risk |
+| 7 | `GET` | `/api/predictions` | `PredictionResponse` | Demand forecasting and depletion metrics |
+| 8 | `GET` | `/api/shortages` | `ShortageResponse` | Impending supply shortages ranked by urgency |
+| 9 | `POST` | `/api/optimize` | `OptimizationResult` | CP-SAT optimization of vehicle allocations & deliveries |
+| 10 | `POST` | `/api/simulation/disruption` | `DisruptionResult` | Injects disruption events into simulation world state |
+| 11 | `POST` | `/api/reoptimize` | `ReoptimizationResult` | Dynamic re-optimization after network disruptions |
+| 12 | `POST` | `/api/courses-of-action` | `CoursesOfActionResponse` | Generates 3 distinct feasible trade-off plans |
+| 13 | `GET` | `/api/resilience` | `ResilienceScore` | Supply Chain Resilience Score (0–100) across 5 dimensions |
+| 14 | `GET` | `/api/vehicle-health` | `VehicleHealthResponse` | Fleet telemetry and predictive maintenance risk |
+| 15 | `POST` | `/api/plans/{plan_id}/approve` | `PlanDecisionResponse` | Human approval and state delivery activation |
+| 16 | `POST` | `/api/plans/{plan_id}/reject` | `PlanDecisionResponse` | Human operator plan rejection |
+| 17 | `POST` | `/api/copilot` | `CopilotResponse` | Grounded AI Logistics Copilot explanation layer |
 
 ---
 
