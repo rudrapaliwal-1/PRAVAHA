@@ -813,6 +813,35 @@ Content-Type: application/json
 
 ---
 
+### 14. `POST /api/copilot`
+Natural language explanation layer providing **grounded, hallucination-free explanations** based solely on CP-SAT solver results, simulation state, resilience indices, and vehicle telemetry.
+
+**Request:**
+```http
+POST /api/copilot
+Content-Type: application/json
+
+{
+  "question": "Why was Route ROUTE-12 changed and not used?",
+  "context": "Northern mountain sector transit"
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "answer": "Route ROUTE-12 was changed or excluded because it is marked as BLOCKED/UNAVAILABLE (risk level: BLOCKED). The CP-SAT solver strictly enforces availability constraints and automatically rerouted deliveries through safe, navigable alternative corridors.",
+  "referenced_entities": [
+    "ROUTE-12"
+  ],
+  "context_summary": "Fleet: 10 vehicles (9 operational). | Depots: 3 supply depots. | Demand Points: 6 destinations. | Routes: 12 total corridors (11 usable).",
+  "provider": "deterministic_grounded_engine",
+  "timestamp": "2026-10-02T16:45:00Z"
+}
+```
+
+---
+
 ## Running Tests
 
 ```bash

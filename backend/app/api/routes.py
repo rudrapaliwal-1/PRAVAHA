@@ -14,7 +14,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Body, HTTPException, Query, status
 
 from app.api.schemas import ErrorResponse
+from app.copilot.service import copilot_service
 from app.models.coa import CoursesOfActionRequest, CoursesOfActionResponse
+from app.models.copilot import CopilotRequest, CopilotResponse
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
 from app.models.disruption import DisruptionRequest, DisruptionResult
@@ -708,6 +710,44 @@ def reject_plan(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reject plan: {str(exc)}",
         ) from exc
+
+
+@router.post(
+    "/copilot",
+    response_model=CopilotResponse,
+    summary="Ask AI Logistics Copilot",
+    description="Natural language explanation layer answering operational queries grounded strictly in CP-SAT solver results and current telemetry.",
+    responses={
+        status.HTTP_200_OK: {
+            "model": CopilotResponse,
+            "description": "Grounded AI explanation successfully generated.",
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Invalid query payload.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error during copilot synthesis.",
+        },
+    },
+)
+def post_copilot_query(
+    request: CopilotRequest = Body(...),
+) -> CopilotResponse:
+    """
+    Ask the AI Logistics Copilot questions regarding vehicle assignments, route choices,
+    resilience drops, shortage risks, disruption impacts, or Courses of Action.
+    """
+    try:
+        current_state = world_state_service.get_state()
+        return copilot_service.ask(request=request, state=current_state)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process copilot query: {str(exc)}",
+        ) from exc
+
 
 
 

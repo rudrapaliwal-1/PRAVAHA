@@ -13,6 +13,7 @@ from app.models.coa import (
     CoursesOfActionResponse,
 )
 from app.models.common import DeliveryStatus, Priority, RiskLevel, SupplyType
+from app.models.copilot import CopilotRequest, CopilotResponse
 from app.models.delivery import Delivery
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
@@ -82,6 +83,8 @@ __all__ = [
     "LogisticsPlan",
     "PlanDecisionRequest",
     "PlanDecisionResponse",
+    "CopilotRequest",
+    "CopilotResponse",
 ]
 
 
