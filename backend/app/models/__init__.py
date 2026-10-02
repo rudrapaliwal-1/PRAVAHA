@@ -6,6 +6,12 @@ Import from here to avoid coupling to internal file layout:
     from app.models import Vehicle, Depot, DemandPoint, Route, Delivery, LogisticsState
 """
 
+from app.models.coa import (
+    COAType,
+    CourseOfActionPlan,
+    CoursesOfActionRequest,
+    CoursesOfActionResponse,
+)
 from app.models.common import DeliveryStatus, Priority, RiskLevel, SupplyType
 from app.models.delivery import Delivery
 from app.models.demand_point import DemandPoint
@@ -20,6 +26,7 @@ from app.models.prediction import (
     SupplyPrediction,
 )
 from app.models.reoptimization import ReoptimizationResult, ReoptimizeRequest
+from app.models.resilience import ResilienceScore
 from app.models.route import Route
 from app.models.shortage import ShortageItem, ShortageResponse
 from app.models.vehicle import Location, Vehicle
@@ -32,6 +39,7 @@ __all__ = [
     "RiskLevel",
     "ShortageSeverity",
     "DisruptionType",
+    "COAType",
     # Core models
     "Location",
     "Vehicle",
@@ -52,6 +60,10 @@ __all__ = [
     "DisruptionResult",
     "ReoptimizeRequest",
     "ReoptimizationResult",
+    "CourseOfActionPlan",
+    "CoursesOfActionRequest",
+    "CoursesOfActionResponse",
+    "ResilienceScore",
 ]
 
 

@@ -640,12 +640,96 @@ Performs dynamic, closed-loop re-optimization upon detecting an operational disr
 
 ---
 
-## Planned Endpoints (Upcoming Sprints)
+### 12. `POST /api/courses-of-action`
+Generates three distinct, feasible Courses of Action (`FASTEST`, `LOWEST_RISK`, `RESOURCE_EFFICIENT`) adhering to all hard capacity, inventory, deadline, and route availability constraints for human decision-maker selection.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/resilience/score` | Supply chain resilience score |
-| POST | `/missions` | Create a logistics mission |
+**Example Request:**
+```json
+{
+  "disruption": {
+    "type": "BLOCK_ROUTE",
+    "target_id": "ROUTE-03"
+  }
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "plans": [
+    {
+      "id": "COA-FASTEST-8A1B2C",
+      "name": "FASTEST",
+      "eta": 2.85,
+      "distance": 115.0,
+      "risk": 0.35,
+      "cost": 787.5,
+      "unmet_demand": 0.0,
+      "deliveries": [],
+      "status": "OPTIMAL",
+      "description": "Maximizes delivery velocity to arrive in minimum transit time, accepting longer mileage and moderate route hazards."
+    },
+    {
+      "id": "COA-LOWEST_RISK-3D4E5F",
+      "name": "LOWEST_RISK",
+      "eta": 3.40,
+      "distance": 130.0,
+      "risk": 0.10,
+      "cost": 840.0,
+      "unmet_demand": 0.0,
+      "deliveries": [],
+      "status": "OPTIMAL",
+      "description": "Maximizes convoy security by strictly selecting safer transit corridors, accepting potential travel delays or extra mileage."
+    },
+    {
+      "id": "COA-RESOURCE_EFFICIENT-6G7H8I",
+      "name": "RESOURCE_EFFICIENT",
+      "eta": 3.10,
+      "distance": 92.0,
+      "risk": 0.25,
+      "cost": 665.0,
+      "unmet_demand": 0.0,
+      "deliveries": [],
+      "status": "OPTIMAL",
+      "description": "Minimizes total mileage and fuel consumption to conserve vehicle wear and logistics resources."
+    }
+  ],
+  "generated_at": "2026-10-02T16:15:00Z"
+}
+```
+
+---
+
+### 11. `GET /api/resilience` (or `/api/resilience/score`)
+Calculates the multi-dimensional **Supply Chain Resilience Score (0–100)** from the active logistics state across 5 core dimensions:
+1. **Inventory Availability** (depot stock buffer vs regional demand)
+2. **Fleet Availability** (operational readiness and vehicle fuel health)
+3. **Route Availability** (navigable road network and hazard profile)
+4. **Demand Coverage** (fulfilled & scheduled delivery commitments)
+5. **Connectivity** (topological graph reachability & corridor redundancy)
+
+**Response (`200 OK`):**
+```json
+{
+  "overall_score": 78.4,
+  "inventory": 90.0,
+  "fleet": 85.0,
+  "routes": 64.0,
+  "demand_coverage": 82.0,
+  "connectivity": 88.0,
+  "inventory_score": 90.0,
+  "fleet_score": 85.0,
+  "route_score": 64.0,
+  "demand_coverage_score": 82.0,
+  "connectivity_score": 88.0,
+  "key_factors": [
+    "Route availability decreased due to corridor blockages or high risk",
+    "Demand coverage improved with active scheduled deliveries",
+    "Depot inventories fully stocked across all critical supply types"
+  ],
+  "calculated_at": "2026-10-02T16:30:00Z"
+}
+```
 
 ---
 
@@ -658,6 +742,7 @@ pytest -v
 ---
 
 *Built for hackathon. Evolving fast.*
+
 
 
 

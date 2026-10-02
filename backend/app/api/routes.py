@@ -14,6 +14,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Body, HTTPException, Query, status
 
 from app.api.schemas import ErrorResponse
+from app.models.coa import CoursesOfActionRequest, CoursesOfActionResponse
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
 from app.models.disruption import DisruptionRequest, DisruptionResult
@@ -21,13 +22,16 @@ from app.models.logistics_state import LogisticsState
 from app.models.optimization import OptimizationResult
 from app.models.prediction import PredictionResponse
 from app.models.reoptimization import ReoptimizationResult, ReoptimizeRequest
+from app.models.resilience import ResilienceScore
 from app.models.route import Route
 from app.models.shortage import ShortageResponse
 from app.models.vehicle import Vehicle
+from app.optimizer.coa_service import coa_service
 from app.optimizer.reoptimizer import reoptimizer_service
 from app.optimizer.service import optimizer_service
 from app.prediction.service import prediction_service
 from app.prediction.shortage_service import shortage_service
+from app.resilience.service import resilience_engine
 from app.simulation.disruption_service import disruption_engine
 from app.simulation.world import world_state_service
 
@@ -438,6 +442,96 @@ def post_reoptimize(request: ReoptimizeRequest = Body(...)) -> ReoptimizationRes
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to execute re-optimization: {str(exc)}",
         ) from exc
+
+
+@router.post(
+    "/courses-of-action",
+    response_model=CoursesOfActionResponse,
+    summary="Generate Courses of Action",
+    description="Generates three distinct feasible logistics plans (FASTEST, LOWEST_RISK, RESOURCE_EFFICIENT) for human decision-maker selection.",
+    responses={
+        status.HTTP_200_OK: {
+            "model": CoursesOfActionResponse,
+            "description": "Three feasible Courses of Action generated successfully.",
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Invalid disruption or state specification.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error during COA generation.",
+        },
+    },
+)
+def post_courses_of_action(
+    request: Optional[CoursesOfActionRequest] = Body(default=None),
+) -> CoursesOfActionResponse:
+    """
+    Generate 3 feasible Courses of Action (FASTEST, LOWEST_RISK, RESOURCE_EFFICIENT).
+
+    Args:
+        request: Optional request containing state snapshot and/or disruption event.
+
+    Returns:
+        CoursesOfActionResponse: The 3 generated optimization plans with executive trade-off summaries.
+    """
+    try:
+        req_state = request.state if request is not None else None
+        req_disruption = request.disruption if request is not None else None
+
+        return coa_service.generate_courses_of_action(
+            state=req_state,
+            disruption=req_disruption,
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        ) from val_err
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate Courses of Action: {str(exc)}",
+        ) from exc
+
+
+@router.get(
+    "/resilience",
+    response_model=ResilienceScore,
+    summary="Get Supply Chain Resilience Score",
+    description="Calculates a holistic multi-dimensional 0-100 resilience score from the active state.",
+    responses={
+        status.HTTP_200_OK: {
+            "model": ResilienceScore,
+            "description": "Resilience health score computed successfully.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error during resilience calculation.",
+        },
+    },
+)
+@router.get(
+    "/resilience/score",
+    response_model=ResilienceScore,
+    include_in_schema=False,
+)
+def get_resilience() -> ResilienceScore:
+    """
+    Compute real-time supply chain resilience score (0-100) across 5 dimensions:
+    inventory, fleet, routes, demand_coverage, connectivity, and return key driving factors.
+    """
+    try:
+        current_state = world_state_service.get_state()
+        return resilience_engine.calculate_resilience(current_state)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to calculate resilience score: {str(exc)}",
+        ) from exc
+
+
 
 
 
