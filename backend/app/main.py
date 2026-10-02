@@ -51,3 +51,13 @@ async def health() -> dict:
         "status": "ok",
         "service": "MissionPath Backend",
     }
+
+
+# ---------------------------------------------------------------------------
+# API Routers
+# ---------------------------------------------------------------------------
+
+from app.api import api_router  # noqa: E402
+
+app.include_router(api_router)
+

@@ -1,1 +1,31 @@
-"""models — Pydantic data models (supply nodes, routes, missions, resources)."""
+"""
+models — Pydantic data models for the MissionPath logistics engine.
+
+Import from here to avoid coupling to internal file layout:
+
+    from app.models import Vehicle, Depot, DemandPoint, Route, Delivery, LogisticsState
+"""
+
+from app.models.common import DeliveryStatus, Priority, RiskLevel, SupplyType
+from app.models.delivery import Delivery
+from app.models.demand_point import DemandPoint
+from app.models.depot import Depot
+from app.models.logistics_state import LogisticsState
+from app.models.route import Route
+from app.models.vehicle import Location, Vehicle
+
+__all__ = [
+    # Shared enums
+    "SupplyType",
+    "Priority",
+    "DeliveryStatus",
+    "RiskLevel",
+    # Core models
+    "Location",
+    "Vehicle",
+    "Depot",
+    "DemandPoint",
+    "Route",
+    "Delivery",
+    "LogisticsState",
+]
