@@ -26,11 +26,13 @@ from app.models.resilience import ResilienceScore
 from app.models.route import Route
 from app.models.shortage import ShortageResponse
 from app.models.vehicle import Vehicle
+from app.models.vehicle_health import VehicleHealthResponse, VehicleHealthStatus
 from app.optimizer.coa_service import coa_service
 from app.optimizer.reoptimizer import reoptimizer_service
 from app.optimizer.service import optimizer_service
 from app.prediction.service import prediction_service
 from app.prediction.shortage_service import shortage_service
+from app.prediction.vehicle_health_service import vehicle_health_service
 from app.resilience.service import resilience_engine
 from app.simulation.disruption_service import disruption_engine
 from app.simulation.world import world_state_service
@@ -530,6 +532,37 @@ def get_resilience() -> ResilienceScore:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to calculate resilience score: {str(exc)}",
         ) from exc
+
+
+@router.get(
+    "/vehicle-health",
+    response_model=VehicleHealthResponse,
+    summary="Get Vehicle Health and Maintenance Telemetry",
+    description="Returns simulated telemetry (mileage, utilization, health_score) and predictive maintenance risk (LOW/MEDIUM/HIGH) for all vehicles.",
+    responses={
+        status.HTTP_200_OK: {
+            "model": VehicleHealthResponse,
+            "description": "Vehicle telemetry and predictive maintenance health report.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error retrieving vehicle health.",
+        },
+    },
+)
+def get_vehicle_health() -> VehicleHealthResponse:
+    """
+    Retrieve fleet-wide vehicle health assessments, telemetry metrics, and predicted maintenance risk.
+    """
+    try:
+        current_state = world_state_service.get_state()
+        return vehicle_health_service.assess_fleet(current_state)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve vehicle health: {str(exc)}",
+        ) from exc
+
 
 
 

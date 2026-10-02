@@ -733,6 +733,46 @@ Calculates the multi-dimensional **Supply Chain Resilience Score (0–100)** fro
 
 ---
 
+### 12. `GET /api/vehicle-health`
+Returns simulated telemetry (mileage, utilization, health_score) and predictive maintenance risk (`LOW`, `MEDIUM`, `HIGH`) across the vehicle fleet.
+
+**Response (`200 OK`):**
+```json
+{
+  "vehicles": [
+    {
+      "vehicle_id": "VEH-01",
+      "mileage": 4499.0,
+      "utilization": 0.0,
+      "health_score": 86.0,
+      "maintenance_risk": "LOW",
+      "available": true,
+      "is_operational": true,
+      "fuel_level": 95.0,
+      "recommended_action": "Vehicle nominal. Ready for high-priority missions."
+    },
+    {
+      "vehicle_id": "VEH-10",
+      "mileage": 3079.2,
+      "utilization": 0.0,
+      "health_score": 15.0,
+      "maintenance_risk": "HIGH",
+      "available": false,
+      "is_operational": false,
+      "fuel_level": 40.0,
+      "recommended_action": "Critical breakdown / Vehicle offline. Ground vehicle immediately for overhaul."
+    }
+  ],
+  "total_vehicles": 10,
+  "operational_count": 9,
+  "high_risk_count": 1,
+  "average_health_score": 81.3,
+  "timestamp": "2026-10-02T16:35:00Z"
+}
+```
+
+---
+
 ## Running Tests
 
 ```bash

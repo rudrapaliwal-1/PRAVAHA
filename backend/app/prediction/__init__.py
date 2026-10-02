@@ -12,6 +12,10 @@ from app.prediction.shortage_service import (
     detect_shortages,
     shortage_service,
 )
+from app.prediction.vehicle_health_service import (
+    VehicleHealthPredictionService,
+    vehicle_health_service,
+)
 
 __all__ = [
     "DemandPredictionService",
@@ -20,4 +24,6 @@ __all__ = [
     "ShortageDetectionService",
     "shortage_service",
     "detect_shortages",
+    "VehicleHealthPredictionService",
+    "vehicle_health_service",
 ]

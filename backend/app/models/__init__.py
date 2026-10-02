@@ -30,6 +30,11 @@ from app.models.resilience import ResilienceScore
 from app.models.route import Route
 from app.models.shortage import ShortageItem, ShortageResponse
 from app.models.vehicle import Location, Vehicle
+from app.models.vehicle_health import (
+    MaintenanceRisk,
+    VehicleHealthResponse,
+    VehicleHealthStatus,
+)
 
 __all__ = [
     # Shared enums
@@ -40,6 +45,7 @@ __all__ = [
     "ShortageSeverity",
     "DisruptionType",
     "COAType",
+    "MaintenanceRisk",
     # Core models
     "Location",
     "Vehicle",
@@ -64,6 +70,8 @@ __all__ = [
     "CoursesOfActionRequest",
     "CoursesOfActionResponse",
     "ResilienceScore",
+    "VehicleHealthStatus",
+    "VehicleHealthResponse",
 ]
 
 
