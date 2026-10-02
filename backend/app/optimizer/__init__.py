@@ -22,6 +22,10 @@ from app.optimizer.coa_service import (
     coa_service,
     generate_courses_of_action,
 )
+from app.optimizer.plan_service import (
+    PlanApprovalService,
+    plan_service,
+)
 from app.optimizer.reoptimizer import (
     DynamicReoptimizer,
     reoptimize_logistics,
@@ -52,4 +56,6 @@ __all__ = [
     "CoursesOfActionService",
     "coa_service",
     "generate_courses_of_action",
+    "PlanApprovalService",
+    "plan_service",
 ]

@@ -773,6 +773,46 @@ Returns simulated telemetry (mileage, utilization, health_score) and predictive 
 
 ---
 
+### 13. `POST /api/plans/{plan_id}/approve` & `POST /api/plans/{plan_id}/reject`
+Enforces **Human-in-the-Loop decision governance**:
+- The optimizer recommends plans with status `PENDING` without executing them automatically.
+- Approving a plan marks its status as `APPROVED`, activates its deliveries in the simulation world state, and designates it as the active plan.
+- Rejecting a plan marks its status as `REJECTED` and prevents/deactivates delivery execution.
+
+**Approve Request:**
+```http
+POST /api/plans/PLAN-A1B2C3/approve
+Content-Type: application/json
+
+{
+  "reason": "Tactical greenlight authorized by Logistics Commander"
+}
+```
+
+**Approve Response (`200 OK`):**
+```json
+{
+  "plan_id": "PLAN-A1B2C3",
+  "status": "APPROVED",
+  "message": "Plan 'PLAN-A1B2C3' approved and set as active logistics plan.",
+  "is_active": true,
+  "plan": {
+    "id": "PLAN-A1B2C3",
+    "name": "RECOMMENDED_PLAN",
+    "status": "APPROVED",
+    "total_supplied": 3500.0,
+    "total_unmet_demand": 0.0,
+    "total_distance": 98.4,
+    "total_eta": 2.65,
+    "estimated_cost": 384.15,
+    "deliveries": []
+  },
+  "timestamp": "2026-10-02T16:40:00Z"
+}
+```
+
+---
+
 ## Running Tests
 
 ```bash

@@ -19,6 +19,12 @@ from app.models.depot import Depot
 from app.models.disruption import DisruptionRequest, DisruptionResult, DisruptionType
 from app.models.logistics_state import LogisticsState
 from app.models.optimization import OptimizationDelivery, OptimizationResult, OptimizerWeights
+from app.models.plan import (
+    LogisticsPlan,
+    PlanDecisionRequest,
+    PlanDecisionResponse,
+    PlanState,
+)
 from app.models.prediction import (
     DemandPointPrediction,
     PredictionResponse,
@@ -46,6 +52,7 @@ __all__ = [
     "DisruptionType",
     "COAType",
     "MaintenanceRisk",
+    "PlanState",
     # Core models
     "Location",
     "Vehicle",
@@ -72,6 +79,9 @@ __all__ = [
     "ResilienceScore",
     "VehicleHealthStatus",
     "VehicleHealthResponse",
+    "LogisticsPlan",
+    "PlanDecisionRequest",
+    "PlanDecisionResponse",
 ]
 
 
