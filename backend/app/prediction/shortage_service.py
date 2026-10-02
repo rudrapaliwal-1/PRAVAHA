@@ -57,7 +57,6 @@ def _severity_rank(sev: ShortageSeverity) -> int:
     ranks = {
         ShortageSeverity.CRITICAL: 4,
         ShortageSeverity.HIGH: 3,
-        ShortageSeverity.MODERATE: 2,
         ShortageSeverity.MEDIUM: 2,
         ShortageSeverity.LOW: 1,
         ShortageSeverity.NONE: 0,

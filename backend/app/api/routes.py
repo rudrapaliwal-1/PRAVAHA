@@ -16,13 +16,19 @@ from fastapi import APIRouter, Body, HTTPException, Query, status
 from app.api.schemas import ErrorResponse
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
+from app.models.disruption import DisruptionRequest, DisruptionResult
 from app.models.logistics_state import LogisticsState
 from app.models.optimization import OptimizationResult
 from app.models.prediction import PredictionResponse
+from app.models.reoptimization import ReoptimizationResult, ReoptimizeRequest
 from app.models.route import Route
+from app.models.shortage import ShortageResponse
 from app.models.vehicle import Vehicle
+from app.optimizer.reoptimizer import reoptimizer_service
 from app.optimizer.service import optimizer_service
 from app.prediction.service import prediction_service
+from app.prediction.shortage_service import shortage_service
+from app.simulation.disruption_service import disruption_engine
 from app.simulation.world import world_state_service
 
 router = APIRouter(
@@ -282,6 +288,159 @@ def get_predictions(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to compute demand predictions: {str(exc)}",
         ) from exc
+
+
+@router.get(
+    "/shortages",
+    response_model=ShortageResponse,
+    summary="Get Supply Shortages",
+    description="Identifies impending and active supply shortages across all demand points, sorted by urgency.",
+    responses={
+        status.HTTP_200_OK: {
+            "model": ShortageResponse,
+            "description": "Supply shortages retrieved and ranked by urgency.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error occurred during shortage detection.",
+        },
+    },
+)
+def get_shortages(
+    horizon_hours: float = Query(
+        default=12.0,
+        gt=0.0,
+        le=168.0,
+        description="Evaluation lookahead horizon in hours (default: 12.0)",
+    ),
+) -> ShortageResponse:
+    """
+    Detect active and future supply shortages across all demand locations.
+
+    Args:
+        horizon_hours: Planning window in hours.
+
+    Returns:
+        ShortageResponse: Collection of shortages sorted by urgency and including recommended resupply amounts.
+    """
+    try:
+        current_state = world_state_service.get_state()
+        return shortage_service.detect_shortages(current_state, horizon_hours=horizon_hours)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to detect supply shortages: {str(exc)}",
+        ) from exc
+
+
+@router.post(
+    "/simulation/disruption",
+    response_model=DisruptionResult,
+    summary="Simulate Disruption Event",
+    description="Injects an operational disruption into the simulation state and records entity mutations.",
+    responses={
+        status.HTTP_200_OK: {
+            "model": DisruptionResult,
+            "description": "Disruption event successfully applied.",
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Invalid disruption parameters or missing target entity.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error during disruption simulation.",
+        },
+    },
+)
+def post_disruption(request: DisruptionRequest = Body(...)) -> DisruptionResult:
+    """
+    Apply a simulated disruption event (BLOCK_ROUTE, VEHICLE_FAILURE, DEMAND_SURGE,
+    INVENTORY_SHORTAGE, NEW_EMERGENCY) to the active world state.
+
+    Args:
+        request: Disruption specification containing type, target_id, and parameters.
+
+    Returns:
+        DisruptionResult: Details of the mutated entities and before/after properties.
+    """
+    try:
+        current_state = world_state_service.get_state()
+        return disruption_engine.apply_disruption(current_state, request)
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        ) from val_err
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to simulate disruption: {str(exc)}",
+        ) from exc
+
+
+@router.post(
+    "/reoptimize",
+    response_model=ReoptimizationResult,
+    summary="Dynamic Re-Optimization",
+    description="Applies an operational disruption, recalculates the delivery plan via CP-SAT, and returns comparative delta metrics.",
+    responses={
+        status.HTTP_200_OK: {
+            "model": ReoptimizationResult,
+            "description": "Logistics plan successfully re-optimized.",
+        },
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Invalid disruption or state specification.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Internal server error during re-optimization.",
+        },
+    },
+)
+def post_reoptimize(request: ReoptimizeRequest = Body(...)) -> ReoptimizationResult:
+    """
+    Execute dynamic re-optimization after an operational disruption.
+
+    Workflow:
+    1. Retrieve pre-disruption state & baseline plan.
+    2. Apply disruption event.
+    3. Identify compromised deliveries, routes, and vehicles.
+    4. Solve new optimal logistics plan with CP-SAT.
+    5. Compare previous plan vs new plan (ETA variance, delay, affected deliveries).
+
+    Args:
+        request: ReoptimizeRequest specifying disruption, optional state, previous plan, and weights.
+
+    Returns:
+        ReoptimizationResult: Comprehensive comparative re-optimization result.
+    """
+    try:
+        target_state = (
+            request.state
+            if request.state is not None
+            else world_state_service.get_state()
+        )
+        return reoptimizer_service.reoptimize(
+            disruption=request.disruption,
+            state=target_state,
+            previous_plan=request.previous_plan,
+            weights=request.weights,
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        ) from val_err
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to execute re-optimization: {str(exc)}",
+        ) from exc
+
+
+
 
 
 

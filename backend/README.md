@@ -473,14 +473,179 @@ $$\text{predicted\_demand} = \text{current\_requirement} + (\text{consumption\_r
 
 ---
 
+### 9. `GET /api/shortages`
+Detects active and impending supply stockouts across all demand locations, calculates exact times to exhaustion, determines recommended resupply quantities, and ranks results strictly by urgency.
+
+**Parameters:**
+- `horizon_hours` (query, optional, default: `12.0`): Evaluation planning horizon in hours.
+
+**Response (`200 OK`):**
+```json
+{
+  "generated_at": "2026-10-02T15:30:00Z",
+  "horizon_hours": 12.0,
+  "total_shortages_detected": 6,
+  "critical_shortages_count": 2,
+  "high_shortages_count": 2,
+  "shortages": [
+    {
+      "demand_point_id": "DEMAND-01",
+      "supply_type": "water",
+      "current_available": 0.0,
+      "consumption_rate": 120.0,
+      "time_to_shortage": 0.0,
+      "predicted_shortage": 5440.0,
+      "severity": "critical",
+      "recommended_resupply_quantity": 5440.0,
+      "priority": "critical",
+      "deadline": "2026-10-03T06:00:00Z",
+      "urgency_score": 4954.4
+    },
+    {
+      "demand_point_id": "DEMAND-03",
+      "supply_type": "medicine",
+      "current_available": 400.0,
+      "consumption_rate": 100.0,
+      "time_to_shortage": 4.0,
+      "predicted_shortage": 800.0,
+      "severity": "high",
+      "recommended_resupply_quantity": 800.0,
+      "priority": "high",
+      "deadline": null,
+      "urgency_score": 3728.0
+    }
+  ]
+}
+```
+
+---
+
+### 10. `POST /api/simulation/disruption`
+Injects real-time operational disruptions into the simulation environment, mutating the active state while isolating the baseline deterministic dataset.
+
+**Supported Disruption Types:**
+- `BLOCK_ROUTE`: Sets target route unavailable and risk to `BLOCKED`.
+- `VEHICLE_FAILURE`: Sets target vehicle unavailable.
+- `DEMAND_SURGE`: Increases required supplies at a demand point by multiplier or fixed quantity.
+- `INVENTORY_SHORTAGE`: Reduces depot inventory stock by percentage or fixed quantity.
+- `NEW_EMERGENCY`: Instantiates a new high-priority demand location and establishes transit corridors.
+
+**Example Request:**
+```json
+{
+  "type": "BLOCK_ROUTE",
+  "target_id": "ROUTE-04"
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "event_id": "DISRUPT-9A4B8C1D",
+  "event_type": "BLOCK_ROUTE",
+  "affected_entities": [
+    "ROUTE-04"
+  ],
+  "state_changes": {
+    "route_id": "ROUTE-04",
+    "previous_available": true,
+    "new_available": false,
+    "previous_risk": "low",
+    "new_risk": "blocked"
+  },
+  "timestamp": "2026-10-02T15:45:00Z"
+}
+```
+
+---
+
+### 11. `POST /api/reoptimize`
+Performs dynamic, closed-loop re-optimization upon detecting an operational disruption. Identifies compromised deliveries, updates constraints, recalculates a feasible plan with Google OR-Tools CP-SAT, and returns comparative schedule delay metrics.
+
+**Example Request:**
+```json
+{
+  "disruption": {
+    "type": "BLOCK_ROUTE",
+    "target_id": "ROUTE-03"
+  }
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "trigger": "BLOCK_ROUTE:ROUTE-03",
+  "disruption_event": {
+    "event_id": "DISRUPT-1A2B3C4D",
+    "event_type": "BLOCK_ROUTE",
+    "affected_entities": ["ROUTE-03"],
+    "state_changes": {
+      "route_id": "ROUTE-03",
+      "previous_available": true,
+      "new_available": false,
+      "previous_risk": "safe",
+      "new_risk": "blocked"
+    },
+    "timestamp": "2026-10-02T16:00:00Z"
+  },
+  "affected_deliveries": [
+    {
+      "vehicle_id": "VEH-01",
+      "depot_id": "DEPOT-ALPHA",
+      "demand_point_id": "DEMAND-01",
+      "supply_type": "water",
+      "quantity": 4000.0,
+      "route_id": "ROUTE-03",
+      "distance": 52.0,
+      "travel_time": 1.35,
+      "risk": "safe",
+      "eta": 1.35,
+      "deadline": "2026-10-03T06:00:00Z",
+      "late_delivery": false,
+      "priority": "critical"
+    }
+  ],
+  "affected_vehicles": [],
+  "affected_routes": ["ROUTE-03"],
+  "previous_eta": 2.45,
+  "new_eta": 3.10,
+  "delay": 0.65,
+  "previous_plan": {
+    "status": "OPTIMAL",
+    "objective_value": 3524800.0,
+    "deliveries": [],
+    "total_supplied": 7500.0,
+    "total_unmet_demand": 2100.0
+  },
+  "new_plan": {
+    "status": "OPTIMAL",
+    "objective_value": 3840200.0,
+    "deliveries": [],
+    "total_supplied": 7500.0,
+    "total_unmet_demand": 2100.0
+  },
+  "unmet_demand": {
+    "DEMAND-01": {
+      "medicine": 0.0,
+      "water": 0.0,
+      "food": 0.0,
+      "fuel": 1500.0,
+      "equipment": 600.0
+    }
+  },
+  "optimization_status": "OPTIMAL"
+}
+```
+
+---
+
 ## Planned Endpoints (Upcoming Sprints)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/simulate/disruption` | Scenario disruption simulation |
 | GET | `/resilience/score` | Supply chain resilience score |
 | POST | `/missions` | Create a logistics mission |
-
 
 ---
 
@@ -493,5 +658,7 @@ pytest -v
 ---
 
 *Built for hackathon. Evolving fast.*
+
+
 
 

@@ -14,7 +14,8 @@ class ShortageSeverity(str, Enum):
     """Urgency classification for projected supply shortages."""
     CRITICAL = "critical"   # Immediate or severe deficit
     HIGH = "high"           # Depletion imminent within near horizon
-    MODERATE = "moderate"   # Measurable deficit accumulating
+    MEDIUM = "medium"       # Measurable deficit accumulating
+    MODERATE = "medium"     # Alias for MEDIUM
     LOW = "low"             # Minor consumption with ample buffer
     NONE = "none"           # No deficit or consumption projected
 
