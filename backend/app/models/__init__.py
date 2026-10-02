@@ -11,6 +11,7 @@ from app.models.delivery import Delivery
 from app.models.demand_point import DemandPoint
 from app.models.depot import Depot
 from app.models.logistics_state import LogisticsState
+from app.models.optimization import OptimizationDelivery, OptimizationResult
 from app.models.route import Route
 from app.models.vehicle import Location, Vehicle
 
@@ -28,4 +29,7 @@ __all__ = [
     "Route",
     "Delivery",
     "LogisticsState",
+    "OptimizationDelivery",
+    "OptimizationResult",
 ]
+
