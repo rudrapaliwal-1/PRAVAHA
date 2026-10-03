@@ -1,11 +1,11 @@
-# SAKSHAM - Disaster Relief Resource-Demand Matching & Logistics Platform
+# Disaster Relief Resource-Demand Matching & Logistics Platform
 
-SAKSHAM is a Disaster Relief Resource-Demand Matching & Logistics Coordination Platform built for real-time operations, connecting civilians, emergency responders, and relief agencies.
+PRAVAHA is a Disaster Relief Resource-Demand Matching & Logistics Coordination Platform built for real-time operations, connecting civilians, emergency responders, and relief agencies.
 
 ## Repository Architecture
 
 ```
-SAKSHAM/
+PRAVAHA/
 │
 ├── apps/
 │   ├── web/           # React + TypeScript + Vite operations & landing dashboard
