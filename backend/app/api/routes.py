@@ -749,6 +749,35 @@ def post_copilot_query(
         ) from exc
 
 
+@router.post(
+    "/demo/run",
+    summary="Run Demo Scenario",
+    description="Resets the simulation world state and initializes the baseline logistics operational demo.",
+    tags=["Demo"],
+)
+def post_demo_run() -> dict:
+    """
+    Reset simulation world state and run standard baseline demo scenario.
+    """
+    try:
+        state = world_state_service.reset_state()
+        resilience = resilience_engine.calculate_resilience(state)
+        return {
+            "status": "success",
+            "message": "MissionPath Demo Scenario Initialized Successfully",
+            "vehicles_count": len(state.vehicles),
+            "depots_count": len(state.depots),
+            "demand_points_count": len(state.demand_points),
+            "resilience_score": resilience.overall_score,
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to execute demo scenario: {str(exc)}",
+        ) from exc
+
+
+
 
 
 

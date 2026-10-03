@@ -82,7 +82,7 @@ class CopilotContextBuilder:
 
         deliveries_data = [
             {
-                "id": d.id,
+                "id": getattr(d, "id", None),
                 "vehicle_id": d.vehicle_id,
                 "depot_id": d.depot_id,
                 "demand_point_id": d.demand_point_id,
